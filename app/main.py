@@ -20,5 +20,5 @@ async def root():
 
 
 @app.get("/info/database")
-async def get_client_ip(request: Request):
+async def get_database():
     return {"db": "postgres"}
