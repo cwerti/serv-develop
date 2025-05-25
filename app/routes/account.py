@@ -118,7 +118,7 @@ async def user_auth_list(token: str = Depends(get_token),
         user: User = await get_user(session, user_id)
         res.append(user)
 
-    return res
+    return Config.cache
 
 
 @auth.post("/out_all")
