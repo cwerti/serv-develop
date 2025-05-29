@@ -1,11 +1,10 @@
 from typing import Optional
-from venv import logger
 
 import fastapi
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, or_, select, insert
 from sqlalchemy.exc import IntegrityError
-from models import User
+from models import User, Role, UsersAndRoles
 from schemas.auth import RegisterRequest
 
 from utils.auth.passwwords import generate_password_hash
@@ -90,46 +89,51 @@ async def user_create(
         user_data: RegisterRequest,
         options: list | None = None
 ) -> User:
-    # role_check_query = select(Role).where(Role.id == user_data.role_id)
-    # if not (await session.execute(role_check_query)).scalar_one_or_none():
-    #     raise fastapi.HTTPException(
-    #         400,
-    #         detail={
-    #             "role_id": user_data.role_id,
-    #             "message": "Такой роли не существуе"},
-    #     )
-
     if user_data.password != user_data.confirm_password:
         raise fastapi.HTTPException(
-            400,
-            detail={
-                "message": "Пароли не совпадают"},
+            status_code=400,
+            detail={"message": "Пароли не совпадают"},
         )
+
     password = generate_password_hash(user_data.password)
-    user_insert = (
-        insert(User)
-        .values(
+
+    try:
+        # Создаем пользователя через обычное добавление в сессию
+        new_user = User(
             username=user_data.username,
             email=user_data.email,
             password=password,
-            birthday=user_data.birthday
+            birthday=user_data.birthday,
+            is_active=True
         )
-        .returning(User)
-    )
+        session.add(new_user)
 
-    if options:
-        user_insert = user_insert.options(*options)
+        # Получаем роль "user"
+        role_result = await session.execute(
+            select(Role).where(Role.code == "user")
+        )
+        user_role = role_result.scalar_one_or_none()
 
-    print(123)
-    try:
-        result = await session.execute(user_insert)
-        return result.scalar_one()
+        if user_role:
+            user_role_link = UsersAndRoles(
+                user_id=new_user.id,
+                role_id=user_role.id
+            )
+            session.add(user_role_link)
+
+        await session.commit()
+        await session.refresh(new_user)
+
+        return new_user
+
     except IntegrityError as e:
         await session.rollback()
-        raise ValueError("Database integrity error occurred") from e
+        if "duplicate key" in str(e):
+            raise ValueError("Пользователь с таким email или username уже существует") from e
+        raise ValueError("Ошибка целостности базы данных") from e
     except Exception as e:
         await session.rollback()
-        raise ValueError("Failed to create user") from e
+        raise ValueError(f"Ошибка при создании пользователя: {str(e)}") from e
 
 
 async def get_user(session: AsyncSession, user_id: int) -> User:

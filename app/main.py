@@ -6,7 +6,11 @@ from starlette.middleware.cors import CORSMiddleware
 
 from typing import TYPE_CHECKING
 
+
 from routes.account import auth
+from routes.constraint import ref
+from routes.permission import permissions
+from routes.role import role
 # from routes.chat.chat_associations import associations
 # from routes.chat.chats import chats
 # from routes.chat.web_socket import web
@@ -100,6 +104,9 @@ async def home():
 
 
 app.include_router(auth, prefix="/api/auth", tags=["User"])
+app.include_router(role, prefix="/api/role", tags=["Role"])
+app.include_router(permissions, prefix="/api/permissions", tags=["Permissions"])
+app.include_router(ref, prefix="/api/ref/user", tags=["Ref"])
 # app.include_router(files, prefix="/files", tags=["Files"])
 # app.include_router(chats, prefix="/chats", tags=["Chats"])
 # app.include_router(associations, prefix="/chats", tags=["Chats"])
@@ -109,5 +116,3 @@ app.include_router(auth, prefix="/api/auth", tags=["User"])
 # app.include_router(orders, prefix="/orders", tags=["orders"])
 # app.include_router(bids, prefix="/bids", tags=["bids"])
 # app.include_router(web, tags=["Websockets"])
-
-

@@ -1,8 +1,8 @@
 import re
 from datetime import date
-from typing import Annotated
+from typing import Annotated, List
 
-from pydantic import field_validator, Field, EmailStr
+from pydantic import field_validator, Field, EmailStr, ConfigDict
 
 from schemas.core import Model
 
@@ -102,3 +102,5 @@ class RegisterRequest(Model):
 
     class Config:
         populate_by_name = True
+
+
