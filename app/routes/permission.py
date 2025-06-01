@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,7 +7,10 @@ from sqlalchemy.orm import Session
 
 from datetime import datetime
 
-from models import Permission, User, RolesAndPermissions
+from internal.logs import get_all_permission
+from models import Permission, User, RolesAndPermissions, ChangeLogs
+from schemas.change_log import ChangeLogResponse
+from schemas.exception import PermissionNotFoundError
 from schemas.session import PermissionDTO, PermissionCreateRequest, PermissionCollectionDTO, PermissionUpdateRequest
 from utils.auth.passwwords import get_current_user
 from utils.database_connection import db_async_session
@@ -14,7 +19,7 @@ from utils.permission import require_permission
 permissions = APIRouter()
 
 
-@permissions.post("/", response_model=PermissionDTO, dependencies=[Depends(require_permission("create_permission"))])
+@permissions.post("/", response_model=PermissionDTO, dependencies=[Depends(require_permission("create_permissions"))])
 async def create_permission(request: PermissionCreateRequest, session: AsyncSession = Depends(db_async_session)):
     # Проверка уникальности
     result = await session.execute(
@@ -30,11 +35,31 @@ async def create_permission(request: PermissionCreateRequest, session: AsyncSess
     session.add(perm)
     await session.commit()
     await session.refresh(perm)
+
+    log = ChangeLogs(entity_type="Permission",
+                     entity_id=perm.id,
+                     action="Create",
+                     old_value="",
+                     new_value=str({
+                         "name": perm.name,
+                         "description": perm.description,
+                         "code": perm.code,
+                         "is_delited": perm.is_deleted,
+                         "created_at": perm.created_at,
+                         "updaated_at": perm.updated_at,
+                         "delitedd_at": perm.deleted_at
+                     }),
+                     created_at=datetime.now())
+
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
+
     return perm
 
 
 @permissions.get("/", response_model=PermissionCollectionDTO,
-                 dependencies=[Depends(require_permission("get-list_permission"))])
+                 dependencies=[Depends(require_permission("get-list_permissions"))])
 async def list_permissions(session: AsyncSession = Depends(db_async_session)):
     result = await session.execute(
         select(Permission).where(Permission.is_deleted == False)
@@ -44,7 +69,7 @@ async def list_permissions(session: AsyncSession = Depends(db_async_session)):
 
 
 @permissions.get("/{permission_id}", response_model=PermissionDTO,
-                 dependencies=[Depends(require_permission("read_permission"))])
+                 dependencies=[Depends(require_permission("read_permissions"))])
 async def get_permission(permission_id: int, session: AsyncSession = Depends(db_async_session)):
     result = await session.execute(
         select(Permission).where(
@@ -59,7 +84,7 @@ async def get_permission(permission_id: int, session: AsyncSession = Depends(db_
 
 
 @permissions.put("/{permission_id}", response_model=PermissionDTO,
-                 dependencies=[Depends(require_permission("update_permission"))])
+                 dependencies=[Depends(require_permission("update_permissions"))])
 async def update_permission(permission_id: int, request: PermissionUpdateRequest,
                             session: AsyncSession = Depends(db_async_session)):
     # Получаем разрешение для обновления
@@ -72,6 +97,18 @@ async def update_permission(permission_id: int, request: PermissionUpdateRequest
     perm = result.scalars().first()
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
+
+    old_perm = {
+        "id" : perm.id,
+        "name": perm.name,
+        "description": perm.description,
+        "code": perm.code,
+        "is_delited": perm.is_deleted,
+        "created_at": perm.created_at,
+        "updaated_at": perm.updated_at,
+        "delitedd_at": perm.deleted_at
+    }
+
 
     # Проверка уникальности name
     if request.name:
@@ -101,11 +138,31 @@ async def update_permission(permission_id: int, request: PermissionUpdateRequest
 
     await session.commit()
     await session.refresh(perm)
+
+    log = ChangeLogs(entity_type="Permission",
+                     entity_id=perm.id,
+                     action="Update",
+                     old_value=str(old_perm),
+                     new_value=str({
+                         "id": perm.id,
+                         "name": perm.name,
+                         "description": perm.description,
+                         "code": perm.code,
+                         "is_delited": perm.is_deleted,
+                         "created_at": perm.created_at,
+                         "updaated_at": perm.updated_at,
+                         "delitedd_at": perm.deleted_at
+                     }),
+                     created_at=datetime.now())
+
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
     return perm
 
 
 @permissions.delete("/{permission_id}", response_model=PermissionDTO,
-                    dependencies=[Depends(require_permission("soft_delete_permission"))])
+                    dependencies=[Depends(require_permission("soft_delete_permissions"))])
 async def soft_delete_permission(
         permission_id: int,
         session: AsyncSession = Depends(db_async_session),
@@ -128,6 +185,17 @@ async def soft_delete_permission(
         if not perm:
             raise HTTPException(status_code=404, detail="Разрешение не найдено или уже удалено")
 
+        old_perm = {
+            "id": perm.id,
+            "name": perm.name,
+            "description": perm.description,
+            "code": perm.code,
+            "is_delited": perm.is_deleted,
+            "created_at": perm.created_at,
+            "updaated_at": perm.updated_at,
+            "delitedd_at": perm.deleted_at
+        }
+
         # Проверяем, не является ли разрешение системным
         if any(perm.code.startswith(prefix) for prefix in
                ["create_", "read_", "update_", "delete_", "get-list_", "restore_"]):
@@ -143,6 +211,27 @@ async def soft_delete_permission(
 
         await session.commit()
         await session.refresh(perm)
+
+        log = ChangeLogs(entity_type="Permission",
+                         entity_id=perm.id,
+                         action="Delete_soft",
+                         old_value=str(old_perm),
+                         new_value=str({
+                             "id": perm.id,
+                             "name": perm.name,
+                             "description": perm.description,
+                             "code": perm.code,
+                             "is_delited": perm.is_deleted,
+                             "created_at": perm.created_at,
+                             "updaated_at": perm.updated_at,
+                             "delitedd_at": perm.deleted_at
+                         }),
+                         created_at=datetime.now())
+
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+
         return perm
 
     except HTTPException:
@@ -156,7 +245,7 @@ async def soft_delete_permission(
 
 
 @permissions.delete("/{permission_id}/hard", response_model=PermissionDTO,
-                    dependencies=[Depends(require_permission("hard_delete_permission"))])
+                    dependencies=[Depends(require_permission("hard_delete_permissions"))])
 async def hard_delete_permission(
         permission_id: int,
         session: AsyncSession = Depends(db_async_session),
@@ -196,6 +285,25 @@ async def hard_delete_permission(
                 status_code=400,
                 detail="Невозможно удалить разрешение, пока оно назначено ролям. Сначала удалите все связи с ролями."
             )
+        log = ChangeLogs(entity_type="Permission",
+                         entity_id=perm.id,
+                         action="Delete_hard",
+                         old_value=str({
+                             "id": perm.id,
+                             "name": perm.name,
+                             "description": perm.description,
+                             "code": perm.code,
+                             "is_delited": perm.is_deleted,
+                             "created_at": perm.created_at,
+                             "updaated_at": perm.updated_at,
+                             "delitedd_at": perm.deleted_at
+                         }),
+                         new_value="",
+                         created_at=datetime.now())
+
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
 
         # Физически удаляем разрешение
         await session.delete(perm)
@@ -213,7 +321,7 @@ async def hard_delete_permission(
 
 
 @permissions.post("/{permission_id}/restore", response_model=PermissionDTO,
-                  dependencies=[Depends(require_permission("restore_permission"))])
+                  dependencies=[Depends(require_permission("restore_permissions"))])
 async def restore_permission(
         permission_id: int,
         session: AsyncSession = Depends(db_async_session),
@@ -235,12 +343,44 @@ async def restore_permission(
         if not perm:
             raise HTTPException(status_code=404, detail="Разрешение не найдено или не было удалено")
 
+        old_perm = {
+            "id": perm.id,
+            "name": perm.name,
+            "description": perm.description,
+            "code": perm.code,
+            "is_delited": perm.is_deleted,
+            "created_at": perm.created_at,
+            "updaated_at": perm.updated_at,
+            "delitedd_at": perm.deleted_at
+        }
+
         perm.is_deleted = False
         perm.deleted_by = None
         perm.deleted_at = None
 
         await session.commit()
         await session.refresh(perm)
+
+        log = ChangeLogs(entity_type="Permission",
+                         entity_id=perm.id,
+                         action="Restore_soft",
+                         old_value=str(old_perm),
+                         new_value=str({
+                             "id": perm.id,
+                             "name": perm.name,
+                             "description": perm.description,
+                             "code": perm.code,
+                             "is_delited": perm.is_deleted,
+                             "created_at": perm.created_at,
+                             "updaated_at": perm.updated_at,
+                             "delitedd_at": perm.deleted_at
+                         }),
+                         created_at=datetime.now())
+
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+
         return perm
 
     except HTTPException:
@@ -250,4 +390,25 @@ async def restore_permission(
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка при восстановлении разрешения: {str(e)}"
+        )
+
+
+@permissions.get("/{permissions_id}/logs", response_model=List[ChangeLogResponse],
+                 dependencies=[Depends(require_permission("get_story_permission")), Depends(get_current_user)])
+async def logs_permissions(
+        permissions_id: int,
+        session: AsyncSession = Depends(db_async_session), ):
+    try:
+        res = await get_all_permission(session, permissions_id)
+        resp = [await ChangeLogResponse.from_orm_async(i, session) for i in res]
+        return resp
+    except PermissionNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Информация по логам не найдена"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при получении логов: {str(e)}"
         )

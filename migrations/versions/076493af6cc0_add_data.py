@@ -78,7 +78,16 @@ def upgrade():
         {"name": "hard-delete-permission", "description": "Жесткое удаление разрешения",
          "code": "hard_delete_permission"},
         {"name": "soft-delete-permission", "description": "Мягкое удаление разрешения",
-         "code": "soft_delete_permission"}
+         "code": "soft_delete_permission"},
+        {"name": "get-story-user", "description": "Получать логи юзера",
+         "code": "get_story_user"
+         },
+        {"name": "get-story-permission", "description": "Получать логи разрешений",
+         "code": "get_story_permission"
+         },
+        {"name": "get-story-role", "description": "Получать логи ролей",
+         "code": "get_story_role"
+         }
     ]
 
     permissions.extend(additional_permissions)

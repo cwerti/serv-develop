@@ -88,7 +88,7 @@ async def user_create(
         session: AsyncSession,
         user_data: RegisterRequest,
         options: list | None = None
-) -> User:
+):
     if user_data.password != user_data.confirm_password:
         raise fastapi.HTTPException(
             status_code=400,
@@ -124,7 +124,16 @@ async def user_create(
         await session.commit()
         await session.refresh(new_user)
 
-        return new_user
+        return {
+            "id": new_user.id,
+            "username": user_data.username,
+            "email": user_data.email,
+            "password": password,
+            "birthday": user_data.birthday,
+            "is_active": True,
+            "updated_at": new_user.updated_at,
+            "created_at": new_user.created_at
+        }
 
     except IntegrityError as e:
         await session.rollback()

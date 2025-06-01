@@ -1,16 +1,24 @@
+import datetime
+from typing import List
+
 import fastapi
 import jwt
-from fastapi import Depends
+from fastapi import Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core import Config
+from core import Config, ConfigLog
 from core.exceptions import NotAuthorized
+from internal.logs import get_user_logs
 from internal.users.users import user_exists, user_create, get_user
-from models.general import User
+from models.general import User, ChangeLogs
 
 from schemas.auth import LoginRequest, RegisterRequest
-from utils.auth.passwwords import verify_password, create_access_token, get_token
+from schemas.change_log import ChangeLogResponse
+from schemas.exception import UserNotFoundError
+from utils.auth.passwwords import verify_password, create_access_token, get_token, get_current_user
 from utils.database_connection import db_async_session
+from utils.permission import require_permission
 
 auth = fastapi.APIRouter()
 
@@ -50,6 +58,17 @@ async def login(response: fastapi.Response,
         Config.cache.append(access_token)
         response.set_cookie(key="access_token", value=access_token, httponly=True)
 
+        log = ChangeLogs(entity_type="User",
+                         entity_id=user.id,
+                         action="Login",
+                         old_value="",
+                         new_value=access_token,
+                         created_at=datetime.datetime.now())
+
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+
     return access_token
 
 
@@ -72,7 +91,19 @@ async def register(
             400,
             detail={"message": "Такой пользователь уже существует"},
         )
-    new_user: User = await user_create(session, user_info)
+    new_user = await user_create(session, user_info)
+
+    log = ChangeLogs(entity_type="User",
+                     entity_id=new_user["id"],
+                     action="Create",
+                     old_value="{}",
+                     new_value=str(new_user),
+                     created_at=datetime.datetime.now())
+
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
+
     return {"statuses": 201, "news_user": user_info}
 
 
@@ -100,11 +131,25 @@ async def user_info(
     return user
 
 
-@auth.post("/out")
+@auth.post("/logout")
 async def logout_user(response: fastapi.Response,
-                      token: str = Depends(get_token)):
+                      token: str = Depends(get_token),
+                      session: AsyncSession = fastapi.Depends(db_async_session), ):
+    user_jwt = jwt.decode(token, Config.SECRET_KEY, Config.ALGORITHM)
+
     response.delete_cookie(key="access_token")
     Config.cache.remove(token)
+
+    log = ChangeLogs(entity_type="User",
+                     entity_id=user_jwt["id"],
+                     action="Logout",
+                     old_value=token,
+                     new_value="",
+                     created_at=datetime.datetime.now())
+
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
 
     return {'message': 'Пользователь успешно вышел из системы'}
 
@@ -128,3 +173,24 @@ async def logout_user(response: fastapi.Response,
     Config.cache = []
 
     return {'message': 'Все пользователи успешно вышели из системы'}
+
+
+@auth.get("/{user_id}/logs", response_model=List[ChangeLogResponse],
+          dependencies=[Depends(require_permission("get_story_user")), Depends(get_current_user)])
+async def logs_user(
+        user_id: int,
+        session: AsyncSession = Depends(db_async_session), ):
+    try:
+        res = await get_user_logs(session, user_id)
+        resp = [await ChangeLogResponse.from_orm_async(i, session) for i in res]
+        return resp
+    except UserNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Информация по логам не найдена"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка при получении логов: {str(e)}"
+        )

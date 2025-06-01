@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from typing import List
 
-from models import User, UsersAndRoles
+from models import User, UsersAndRoles, RolesAndPermissions
 from utils.database_connection import db_async_session
 from utils.permission import require_permission
 
@@ -119,5 +119,23 @@ async def restore_role(id: int, role_id: int, session: AsyncSession = Depends(db
         raise HTTPException(status_code=404, detail="Удаленная связь пользователь-роль не найдена")
 
     user_role.is_deleted = False
+    await session.commit()
+    return {"status": "success"}
+
+
+@ref.delete("/{id}/permission/{role_id}/soft", dependencies=[Depends(require_permission("soft_delete_role_user"))])
+async def soft_delete_permission(id: int, role_id: int, session: AsyncSession = Depends(db_async_session)):
+    """Мягкое удаление разрешения у роли"""
+    result = await session.execute(
+        select(RolesAndPermissions).where(
+            RolesAndPermissions.permission_id == id,
+            RolesAndPermissions.role_id == role_id
+        )
+    )
+    user_role = result.scalars().first()
+    if not user_role:
+        raise HTTPException(status_code=404, detail="Связь азрешение-роль не найдена")
+
+    user_role.is_deleted = True
     await session.commit()
     return {"status": "success"}

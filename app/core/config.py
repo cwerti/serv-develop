@@ -88,6 +88,10 @@ try:
         ALGORITHM = "HS256"
         ACCESS_TOKEN_EXPIRE_MINUTES = 3000000
 
+    class ConfigLog(ConfigAbstract):
+        User = "User"
+        Role = "Role"
+        Permission = "Permision"
 
     class Config(  # noqa: D101
         AppSettings,

@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, List
 import os
 import imghdr
@@ -103,4 +104,17 @@ class RolesAndPermissions(TimestampMixin, Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     role_id = Column(Integer, ForeignKey('roles.id'), nullable=False)
     permission_id = Column(Integer, ForeignKey('permissions.id'), nullable=False)
+    is_deleted = Column(Boolean, default=False)
     __table_args__ = (UniqueConstraint('role_id', 'permission_id', name='_role_permission_uc'),)
+
+
+class ChangeLogs(Base):
+    __tablename__ = "change_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    entity_type = Column(String(100), nullable=False)
+    entity_id = Column(Integer, nullable=False)
+    action = Column(String(10), nullable=False)
+    old_value = Column(Text)
+    new_value = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
