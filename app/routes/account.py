@@ -175,14 +175,15 @@ async def logout_user(response: fastapi.Response,
     return {'message': 'Все пользователи успешно вышели из системы'}
 
 
-@auth.get("/{user_id}/logs", response_model=List[ChangeLogResponse],
+@auth.get("/{user_id}/logs",
           dependencies=[Depends(require_permission("get_story_user")), Depends(get_current_user)])
 async def logs_user(
         user_id: int,
         session: AsyncSession = Depends(db_async_session), ):
     try:
         res = await get_user_logs(session, user_id)
-        resp = [await ChangeLogResponse.from_orm_async(i, session) for i in res]
+        resp = [{"id": i.id, "entity_type": i.entity_type, "entity_id": i.entity_id, "action": i.action,
+                 "old_value": i.old_value, "new_value": i.new_value, "created_at": i.created_at} for i in res]
         return resp
     except UserNotFoundError:
         raise HTTPException(

@@ -361,7 +361,8 @@ async def logs_role(
         session: AsyncSession = Depends(db_async_session), ):
     try:
         res = await get_all_roles(session, role_id)
-        resp = [await ChangeLogResponse.from_orm_async(i, session) for i in res]
+        resp = [{"id": i.id, "entity_type": i.entity_type, "entity_id": i.entity_id, "action": i.action,
+                 "old_value": i.old_value, "new_value": i.new_value, "created_at": i.created_at} for i in res]
         return resp
     except RoleNotFoundError:
         raise HTTPException(

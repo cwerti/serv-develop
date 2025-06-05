@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from schemas.core import Model
 
@@ -22,9 +23,6 @@ class ChangeLogResponse(ChangeLogBase):
     id: int
     created_at: datetime
 
-    class Config:
-        orm_mode = True
-        from_orm = True
 
 class ChangeLogCollection(Model):
     """DTO класс для коллекции логов изменений.
